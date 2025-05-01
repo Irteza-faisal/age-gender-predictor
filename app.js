@@ -3,83 +3,72 @@ const video = document.getElementById('video');
 const output = document.getElementById('output');
 const startBtn = document.getElementById('startBtn');
 const predictBtn = document.getElementById('predictBtn');
-const loadingBarContainer = document.getElementById('loadingBarContainer');
 const loadingBar = document.getElementById('loadingBar');
+const statusMessage = document.getElementById('statusMessage');
 
 const cpuTimeDisplay = document.getElementById('cpuTime');
 const memoryDisplay = document.getElementById('memoryUsage');
 const storageDisplay = document.getElementById('storageUsage');
 
-async function getModelSizeMB(url){
-    let totalBytes = 0;
-
-    // Fetch model.json
-    const modelJson = await fetch(`${url}/model.json`);
-    const model = await modelJson.json();
-
-    // Add model.json size
-    const modelJsonSize = parseInt(modelJson.headers.get('content-length') || '0');
-    totalBytes += modelJsonSize;
-
-    // Add all shard sizes
-    for (const weightFile of model.weightsManifest[0].paths) {
-        const weightResp = await fetch(`${url}/${weightFile}`, { method: 'HEAD' });
-        const size = parseInt(weightResp.headers.get('content-length') || '0');
-        totalBytes += size;
-    }
-
-    return totalBytes / (1024 * 1024); // MB
+function updateStatus(text, progressPercent) {
+  statusMessage.innerText = text;
+  loadingBar.style.width = `${progressPercent}%`;
 }
 
-async function updatePerformanceStats(inferenceTimeMs) {
-  cpuTimeDisplay.innerText = `Inference Time: ${inferenceTimeMs.toFixed(2)} ms`;
+async function getModelSizeMB(url) {
+  let totalBytes = 0;
+  const modelJson = await fetch(`${url}/model.json`);
+  const model = await modelJson.json();
+  totalBytes += parseInt(modelJson.headers.get('content-length') || '0');
+  for (const weightFile of model.weightsManifest[0].paths) {
+    const headResp = await fetch(`${url}/${weightFile}`, { method: 'HEAD' });
+    totalBytes += parseInt(headResp.headers.get('content-length') || '0');
+  }
+  return totalBytes / (1024 * 1024); // MB
+}
 
-  // RAM usage (if supported)
-  if (performance.memory) {
-    const used = (performance.memory.usedJSHeapSize / (1024 * 1024)).toFixed(2);
-    const total = (performance.memory.totalJSHeapSize / (1024 * 1024)).toFixed(2);
-    memoryDisplay.innerText = `RAM Usage: ${used} MB / ${total} MB`;
-  } else {
-    memoryDisplay.innerText = 'RAM Usage: Not supported';
+async function requestCameraAccess(retries = 2) {
+  updateStatus("Requesting camera access...", 90);
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+      video.srcObject = stream;
+      updateStatus("Camera ready!", 100);
+      return;
+    } catch (err) {
+      console.warn(`Camera access attempt ${attempt + 1} failed.`);
+      if (attempt === retries) throw err;
+      await new Promise(res => setTimeout(res, 1000)); // Wait then retry
+    }
   }
 }
 
 startBtn.onclick = async () => {
-    try {
-        loadingBarContainer.style.display = 'block';
-        console.log("Loading model...");
+  startBtn.disabled = true;
+  predictBtn.style.display = 'none';
+  updateStatus("Downloading model metadata...", 10);
 
-        const modelPath = '/tfjs_model';
+  const modelPath = '/tfjs_model';
 
-        const sizeStart = performance.now();
-        const modelSizeMB = await getModelSizeMB(modelPath);
-        const sizeEnd = performance.now();
+  try {
+    const modelSizeMB = await getModelSizeMB(modelPath);
+    storageDisplay.innerText = `Model Size: ${modelSizeMB.toFixed(2)} MB`;
 
-        const loadStart = performance.now();
-        model = await tf.loadGraphModel(`${modelPath}/model.json`);
-        const loadEnd = performance.now();
+    updateStatus("Loading model into memory...", 40);
+    const loadStart = performance.now();
+    model = await tf.loadGraphModel(`${modelPath}/model.json`);
+    const loadEnd = performance.now();
+    cpuTimeDisplay.innerText = `Model Download Time: ${(loadEnd - loadStart).toFixed(2)} ms`;
 
-        const downloadTime = loadEnd - loadStart;
+    updateStatus("Model loaded, initializing camera...", 70);
+    await requestCameraAccess();
 
-        const stream = await navigator.mediaDevices.getUserMedia({ video: true });
-        video.srcObject = stream;
-
-        predictBtn.style.display = 'inline-block';
-        startBtn.disabled = true;
-        loadingBarContainer.style.display = 'none';
-
-        // Display model size and download time
-        document.getElementById('storageUsage').innerText =
-            `Model Size: ${modelSizeMB.toFixed(2)} MB`;
-
-        document.getElementById('cpuTime').innerText =
-            `Model Download Time: ${downloadTime.toFixed(2)} ms`;
-
-    } 
-    catch (err) {
-        console.error("Camera or model error:", err);
-        alert('Camera access failed. Check console for details.');
-    }
+    predictBtn.style.display = 'inline-block';
+  } catch (err) {
+    console.error("Error during setup:", err);
+    updateStatus("Failed to access camera. Please allow permission and refresh.", 100);
+    alert('Camera access failed. Check your permissions.');
+  }
 };
 
 predictBtn.onclick = async () => {
@@ -104,3 +93,15 @@ predictBtn.onclick = async () => {
 
   await updatePerformanceStats(endTime - startTime);
 };
+
+async function updatePerformanceStats(inferenceTimeMs) {
+  cpuTimeDisplay.innerText = `Inference Time: ${inferenceTimeMs.toFixed(2)} ms`;
+
+  if (performance.memory) {
+    const used = (performance.memory.usedJSHeapSize / (1024 * 1024)).toFixed(2);
+    const total = (performance.memory.totalJSHeapSize / (1024 * 1024)).toFixed(2);
+    memoryDisplay.innerText = `RAM Usage: ${used} MB / ${total} MB`;
+  } else {
+    memoryDisplay.innerText = 'RAM Usage: Not supported';
+  }
+}

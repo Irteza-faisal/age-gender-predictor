@@ -69,27 +69,33 @@ button:hover {
     text-align: center;
 }
 
-#loadingBarContainer {
+#loader {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    margin-bottom: 1rem;
+  }
+  
+  #loadingBarContainer {
     width: 100%;
     max-width: 360px;
     height: 6px;
     background-color: #ddd;
     border-radius: 4px;
     overflow: hidden;
-    margin-bottom: 1rem;
-    display: none;
-}
-
-#loadingBar {
+    margin-bottom: 0.5rem;
+  }
+  
+  #loadingBar {
     width: 0%;
     height: 100%;
     background-color: #4f46e5;
-    animation: loadBar 2s ease-out forwards;
-}
-
-@keyframes loadBar {
-    0% { width: 0%; }
-    100% { width: 100%; }
+    transition: width 0.3s ease-in-out;
+  }
+  
+  #statusMessage {
+    font-size: 0.95rem;
+    color: #555;
 }
 
 #performance {
