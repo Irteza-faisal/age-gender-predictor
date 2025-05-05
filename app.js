@@ -29,16 +29,57 @@ async function getModelSizeMB(url) {
 
 async function requestCameraAccess(retries = 2) {
   updateStatus("Requesting camera access...", 90);
+
+  // Check browser support
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    alert("Camera access is not supported in this browser.");
+    updateStatus("Camera not supported.", 100);
+    return;
+  }
+
+  // Check permission status, if available
+  try {
+    const permissionStatus = await navigator.permissions.query({ name: 'camera' });
+    console.log("Camera permission state:", permissionStatus.state);
+
+    if (permissionStatus.state === 'denied') {
+      alert("Camera access has been permanently denied. Please allow it in your browser settings.");
+      updateStatus("Camera permission denied.", 100);
+      return;
+    }
+  } catch (err) {
+    console.warn("Permission query not supported or failed:", err);
+  }
+
   for (let attempt = 0; attempt <= retries; attempt++) {
     try {
+      console.log(`Camera access attempt ${attempt + 1}...`);
+
+      // Stop previous stream if it exists
+      if (video.srcObject) {
+        const tracks = video.srcObject.getTracks();
+        tracks.forEach(track => track.stop());
+        video.srcObject = null;
+      }
+
+      // Only request video (no audio needed)
       const stream = await navigator.mediaDevices.getUserMedia({ video: true });
       video.srcObject = stream;
+
       updateStatus("Camera ready!", 100);
+      console.log("Camera access granted and stream started.");
       return;
+
     } catch (err) {
-      console.warn(`Camera access attempt ${attempt + 1} failed.`);
-      if (attempt === retries) throw err;
-      await new Promise(res => setTimeout(res, 1000)); // Wait then retry
+      console.warn(`Attempt ${attempt + 1} failed:`, err);
+
+      if (attempt === retries) {
+        updateStatus("Failed to access camera. Please allow permission and refresh.", 100);
+        alert(`Camera access failed: ${err.name} - ${err.message}`);
+      }
+
+      // Wait 1 second before retrying
+      await new Promise(res => setTimeout(res, 1000));
     }
   }
 }
